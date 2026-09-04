@@ -9,6 +9,15 @@ app.use(express.json());
 
 const UPSTREAM_TIMEOUT_MS = Number(process.env.UPSTREAM_TIMEOUT_MS) || 10000;
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
+const NEWS_KEY = process.env.APIWEATHERNEWS;
+
+const NEWS_KEYWORD_MAP = {
+  all: 'weather',
+  storms: 'storm',
+  floods: 'flood',
+  heatwaves: 'heatwave',
+  winter: 'snow winter',
+};
 
 async function fetchJson(url) {
   const controller = new AbortController();
@@ -18,6 +27,17 @@ async function fetchJson(url) {
     const response = await fetch(url, { signal: controller.signal });
     if (!response.ok) throw new Error(`Upstream request failed with ${response.status}`);
     return response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchWithTimeout(url) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
+
+  try {
+    return await fetch(url, { signal: controller.signal });
   } finally {
     clearTimeout(timeout);
   }
@@ -230,8 +250,40 @@ app.get('/api/weather/air', async (req, res) => {
   }
 });
 
-app.get('/api/news', (_req, res) => {
-  res.json({ articles: [] });
+app.get('/api/news', async (req, res) => {
+  const category = req.query.category?.trim() || 'all';
+  const keyword = NEWS_KEYWORD_MAP[category] || 'weather';
+
+  try {
+    const url =
+      'https://api.currentsapi.services/v1/search' +
+      `?keywords=${encodeURIComponent(keyword)}` +
+      '&language=en' +
+      `&apiKey=${NEWS_KEY}`;
+
+    const response = await fetchWithTimeout(url);
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.warn('Currents API error:', data.message);
+      return res.json({ articles: [] });
+    }
+
+    const articles = (data.news || [])
+      .filter(article => article.title && article.url)
+      .map(article => ({
+        title: article.title,
+        source: article.author || 'Unknown',
+        url: article.url,
+        thumbnail: article.image !== 'None' ? article.image : null,
+        publishedAt: article.published,
+      }));
+
+    return res.json({ articles });
+  } catch (error) {
+    console.error('news error:', error.message);
+    return res.json({ articles: [] });
+  }
 });
 
 app.get('/api/weather', async (req, res) => {
