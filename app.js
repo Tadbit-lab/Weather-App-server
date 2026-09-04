@@ -281,20 +281,3 @@ app.use((err, _req, res, _next) => {
   console.error(err);
   res.status(500).json({ error: 'Internal server error' });
 });
-
-// Add this to the bottom of server.js
-// Pings your own server every 14 minutes
-// to prevent spin down
-
-const BACKEND_URL = process.env.RENDER_EXTERNAL_URL;
-
-if (BACKEND_URL) {
-  setInterval(async () => {
-    try {
-      await fetch(`${BACKEND_URL}/api/health`);
-      console.log('Keep-alive ping sent');
-    } catch (err) {
-      console.warn('Keep-alive ping failed:', err.message);
-    }
-  }, 14 * 60 * 1000); // every 14 minutes
-}
